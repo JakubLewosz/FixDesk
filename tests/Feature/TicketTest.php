@@ -7,6 +7,7 @@ use App\Models\Category;
 use App\Models\Ticket;
 use Illuminate\Database\QueryException;
 use Illuminate\Foundation\Testing\RefreshDatabase;
+use Illuminate\Testing\TestResponse;
 use PHPUnit\Framework\Attributes\DataProvider;
 use Tests\TestCase;
 
@@ -16,15 +17,34 @@ class TicketTest extends TestCase
 
     private function payload(array $overrides = []): array
     {
-        return array_replace(['title' => '  Uszkodzona klawiatura  ', 'location' => ' Pracownia Łódź ',
+        return array_replace([
+            'title' => '  Uszkodzona klawiatura  ',
+            'location' => ' Pracownia Łódź ',
             'category_id' => Category::factory()->create()->id,
-            'description' => "  Nie działają polskie znaki.\nSprawdzono połączenie.  "], $overrides);
+            'description' => "  Nie działają polskie znaki.\nSprawdzono połączenie.  ",
+        ], $overrides);
+    }
+
+    private function assertPaginationRedirect(TestResponse $response, array $expectedParams): string
+    {
+        $response->assertRedirect()->assertSessionMissing('error');
+        $url = $response->headers->get('Location');
+        $this->assertSame(route('tickets.index'), explode('?', $url)[0]);
+        parse_str(parse_url($url, PHP_URL_QUERY) ?? '', $params);
+        $this->assertEquals($expectedParams, $params);
+
+        return $url;
     }
 
     public function test_creation_normalizes_fields_and_ignores_process_fields(): void
     {
-        $data = $this->payload(['status' => 'resolved', 'resolution' => 'Fałszywe rozwiązanie',
-            'resolved_at' => '2000-01-01', 'archived_at' => '2000-01-01', 'created_at' => '2000-01-01']);
+        $data = $this->payload([
+            'status' => 'resolved',
+            'resolution' => 'Fałszywe rozwiązanie',
+            'resolved_at' => '2000-01-01',
+            'archived_at' => '2000-01-01',
+            'created_at' => '2000-01-01',
+        ]);
         $this->post(route('tickets.store'), $data)->assertRedirect(route('tickets.show', Ticket::first()))->assertSessionHas('success');
         $ticket = Ticket::sole();
         $this->assertSame('Uszkodzona klawiatura', $ticket->title);
@@ -40,14 +60,22 @@ class TicketTest extends TestCase
     public static function invalidFields(): array
     {
         return [
-            'missing title' => ['title', ''], 'spaces title' => ['title', '   '],
-            'short title' => ['title', 'abcd'], 'long title' => ['title', str_repeat('ą', 121)],
-            'empty location' => ['location', ''], 'short location' => ['location', 'a'],
-            'long location' => ['location', str_repeat('ł', 101)], 'spaces location' => ['location', '  '],
-            'empty description' => ['description', ''], 'short description' => ['description', 'abc'],
-            'long description' => ['description', str_repeat('ó', 5001)], 'spaces description' => ['description', " \n "],
-            'missing category' => ['category_id', ''], 'unknown category' => ['category_id', 999999],
-            'array title' => ['title', ['wrong']], 'array category' => ['category_id', [1]],
+            'missing title' => ['title', ''],
+            'spaces title' => ['title', '   '],
+            'short title' => ['title', 'abcd'],
+            'long title' => ['title', str_repeat('ą', 121)],
+            'empty location' => ['location', ''],
+            'short location' => ['location', 'a'],
+            'long location' => ['location', str_repeat('ł', 101)],
+            'spaces location' => ['location', '  '],
+            'empty description' => ['description', ''],
+            'short description' => ['description', 'abc'],
+            'long description' => ['description', str_repeat('ó', 5001)],
+            'spaces description' => ['description', " \n "],
+            'missing category' => ['category_id', ''],
+            'unknown category' => ['category_id', 999999],
+            'array title' => ['title', ['wrong']],
+            'array category' => ['category_id', [1]],
         ];
     }
 
@@ -62,8 +90,11 @@ class TicketTest extends TestCase
 
     public function test_unicode_maximum_lengths_are_accepted(): void
     {
-        $this->post(route('tickets.store'), $this->payload(['title' => str_repeat('ą', 120),
-            'location' => str_repeat('ł', 100), 'description' => str_repeat('ż', 5000)]))->assertSessionHasNoErrors();
+        $this->post(route('tickets.store'), $this->payload([
+            'title' => str_repeat('ą', 120),
+            'location' => str_repeat('ł', 100),
+            'description' => str_repeat('ż', 5000),
+        ]))->assertSessionHasNoErrors();
         $this->assertDatabaseCount('tickets', 1);
         $this->assertSame(120, mb_strlen(Ticket::sole()->title));
     }
@@ -76,9 +107,14 @@ class TicketTest extends TestCase
             $created = $ticket->created_at->toDateTimeString();
             $this->travel(1)->hours();
             $this->get(route('tickets.edit', $ticket))->assertOk()->assertSee('name="_method" value="PATCH"', false);
-            $this->patch(route('tickets.update', $ticket), $this->payload(['title' => 'Poprawiony tytuł',
-                'status' => 'resolved', 'created_at' => '2000-01-01', 'resolution' => 'Nieuprawnione rozwiązanie',
-                'resolved_at' => '2000-01-01', 'archived_at' => '2000-01-01']))
+            $this->patch(route('tickets.update', $ticket), $this->payload([
+                'title' => 'Poprawiony tytuł',
+                'status' => 'resolved',
+                'created_at' => '2000-01-01',
+                'resolution' => 'Nieuprawnione rozwiązanie',
+                'resolved_at' => '2000-01-01',
+                'archived_at' => '2000-01-01',
+            ]))
                 ->assertRedirect(route('tickets.show', $ticket))->assertSessionHas('success');
             $ticket->refresh();
             $this->assertSame('Poprawiony tytuł', $ticket->title);
@@ -107,7 +143,8 @@ class TicketTest extends TestCase
         $this->assertSame('Naprawiono przewód i sprawdzono sprzęt.', $ticket->resolution);
         $this->travel(1)->hours();
         $this->post(route('tickets.resolve', $ticket), ['resolution' => 'Inne poprawne rozwiązanie'])
-            ->assertSessionHas('error')->assertRedirect(route('tickets.show', $ticket));
+            ->assertSessionHas('error', 'Rozwiązać można tylko niezarchiwizowane zgłoszenie będące w trakcie obsługi.')
+            ->assertRedirect(route('tickets.show', $ticket));
         $this->assertSame($resolved, $ticket->refresh()->getRawOriginal());
         $this->post(route('tickets.archive', $ticket))->assertRedirect(route('tickets.index'))->assertSessionHas('success');
         $archived = $ticket->refresh()->getRawOriginal();
@@ -115,7 +152,9 @@ class TicketTest extends TestCase
         $this->assertTrue($ticket->archived_at->greaterThanOrEqualTo($ticket->resolved_at));
         $this->assertSame($resolved['resolution'], $ticket->resolution);
         $this->travel(1)->hours();
-        $this->post(route('tickets.archive', $ticket))->assertSessionHas('error');
+        $this->post(route('tickets.archive', $ticket))
+            ->assertRedirect(route('tickets.show', $ticket))
+            ->assertSessionHas('error', 'Archiwizować można tylko rozwiązane zgłoszenie, które nie znajduje się jeszcze w archiwum.');
         $this->assertSame($archived, $ticket->refresh()->getRawOriginal());
         $this->get(route('tickets.index'))->assertDontSee($ticket->title);
         $this->get(route('tickets.index', ['view' => 'archived']))->assertSee($ticket->title);
@@ -125,7 +164,13 @@ class TicketTest extends TestCase
 
     public static function invalidResolutions(): array
     {
-        return [[''], ['   '], ['krótki'], [str_repeat('ą', 2001)], [['text']]];
+        return [
+            [''],
+            ['   '],
+            ['krótki'],
+            [str_repeat('ą', 2001)],
+            [['text']],
+        ];
     }
 
     #[DataProvider('invalidResolutions')]
@@ -140,8 +185,15 @@ class TicketTest extends TestCase
 
     public static function forbiddenTransitions(): array
     {
-        return [['new', 'resolve'], ['new', 'archive'], ['in_progress', 'archive'],
-            ['in_progress', 'start'], ['resolved', 'start'], ['archived', 'start'], ['archived', 'resolve']];
+        return [
+            ['new', 'resolve'],
+            ['new', 'archive'],
+            ['in_progress', 'archive'],
+            ['in_progress', 'start'],
+            ['resolved', 'start'],
+            ['archived', 'start'],
+            ['archived', 'resolve'],
+        ];
     }
 
     #[DataProvider('forbiddenTransitions')]
@@ -149,25 +201,61 @@ class TicketTest extends TestCase
     {
         $factory = Ticket::factory();
         $ticket = match ($state) {
-            'resolved' => $factory->resolved()->create(), 'archived' => $factory->archived()->create(),
-            'in_progress' => $factory->inProgress()->create(), default => $factory->create()
+            'resolved' => $factory->resolved()->create(),
+            'archived' => $factory->archived()->create(),
+            'in_progress' => $factory->inProgress()->create(),
+            default => $factory->create(),
+        };
+        $message = match ($action) {
+            'start' => 'Obsługę można rozpocząć tylko dla nowego, niezarchiwizowanego zgłoszenia.',
+            'resolve' => 'Rozwiązać można tylko niezarchiwizowane zgłoszenie będące w trakcie obsługi.',
+            'archive' => 'Archiwizować można tylko rozwiązane zgłoszenie, które nie znajduje się jeszcze w archiwum.',
         };
         $before = $ticket->refresh()->getRawOriginal();
         $this->post(route('tickets.'.$action, $ticket), ['resolution' => ''])
-            ->assertRedirect(route('tickets.show', $ticket))->assertSessionHas('error')->assertSessionHasNoErrors();
+            ->assertRedirect(route('tickets.show', $ticket))
+            ->assertSessionHas('error', $message)
+            ->assertSessionHasNoErrors();
         $this->assertSame($before, $ticket->refresh()->getRawOriginal());
     }
 
     public function test_closed_tickets_cannot_be_edited_even_with_invalid_payload(): void
     {
+        $message = 'Edytować można tylko nowe zgłoszenia i zgłoszenia w trakcie, które nie są zarchiwizowane.';
+
         foreach ([Ticket::factory()->resolved()->create(), Ticket::factory()->archived()->create()] as $ticket) {
             $before = $ticket->refresh()->getRawOriginal();
-            $this->get(route('tickets.edit', $ticket))->assertRedirect(route('tickets.show', $ticket))->assertSessionHas('error');
+            $this->get(route('tickets.edit', $ticket))
+                ->assertRedirect(route('tickets.show', $ticket))
+                ->assertSessionHas('error', $message);
+            $this->assertSame($before, $ticket->refresh()->getRawOriginal());
+
             foreach ([$this->payload(), []] as $data) {
-                $this->patch(route('tickets.update', $ticket), $data)->assertRedirect(route('tickets.show', $ticket))->assertSessionHas('error');
+                $this->patch(route('tickets.update', $ticket), $data)
+                    ->assertRedirect(route('tickets.show', $ticket))
+                    ->assertSessionHas('error', $message)
+                    ->assertSessionHasNoErrors();
                 $this->assertSame($before, $ticket->refresh()->getRawOriginal());
             }
         }
+    }
+
+    public function test_page_beyond_last_redirects_to_last_active_page(): void
+    {
+        $this->freezeTime();
+        $tickets = Ticket::factory()->count(14)->create();
+
+        $url = $this->assertPaginationRedirect(
+            $this->get(route('tickets.index', ['page' => 999, 'unvalidated' => 'discard'])),
+            ['page' => 2],
+        );
+
+        $this->get($url)
+            ->assertOk()
+            ->assertDontSee('Brak zgłoszeń')
+            ->assertViewHas('tickets', fn ($page) => $page->total() === 14
+                && $page->count() === 4
+                && $page->modelKeys() === $tickets->take(4)->reverse()->values()->modelKeys());
     }
 
     public function test_filters_are_combined_and_pagination_preserves_them(): void
@@ -182,17 +270,115 @@ class TicketTest extends TestCase
         $response = $this->get(route('tickets.index', $params))->assertOk()->assertDontSee($new->title)->assertDontSee($other->title)->assertDontSee($archived->title);
         $response->assertViewHas('tickets', fn ($tickets) => $tickets->total() === 12 && $tickets->count() === 10 && $tickets->first()->id === $matches->last()->id);
         $response->assertSee('status=in_progress', false)->assertSee('category_id='.$category->id, false)->assertSee('page=2', false);
-        $this->get(route('tickets.index', $params + ['page' => 2]))->assertViewHas('tickets', fn ($tickets) => $tickets->count() === 2);
+        $this->get(route('tickets.index', $params + ['page' => 2]))
+            ->assertOk()
+            ->assertViewHas('tickets', fn ($tickets) => $tickets->count() === 2);
+
+        $url = $this->assertPaginationRedirect(
+            $this->get(route('tickets.index', $params + ['page' => 999, 'unvalidated' => 'discard'])),
+            $params + ['page' => 2],
+        );
+        $this->get($url)
+            ->assertOk()
+            ->assertDontSee('Brak wyników filtrowania')
+            ->assertDontSee($new->title)
+            ->assertDontSee($other->title)
+            ->assertDontSee($archived->title)
+            ->assertViewHas('tickets', fn ($tickets) => $tickets->total() === 12
+                && $tickets->count() === 2
+                && $tickets->modelKeys() === $matches->take(2)->reverse()->values()->modelKeys());
+
         $this->get(route('tickets.index', ['status' => 'in_progress']))->assertViewHas('tickets', fn ($tickets) => $tickets->total() === 13);
         $this->get(route('tickets.index', ['category_id' => $category->id]))->assertViewHas('tickets', fn ($tickets) => $tickets->total() === 13);
         $this->get(route('tickets.index', ['view' => 'archived']))->assertSee($archived->title)->assertDontSee($new->title);
     }
 
+    public function test_page_beyond_last_preserves_archive_and_filters(): void
+    {
+        $this->freezeTime();
+        $category = Category::factory()->create();
+        $matches = Ticket::factory()->count(12)->archived()->create(['category_id' => $category->id]);
+        $active = Ticket::factory()->resolved()->create(['category_id' => $category->id, 'title' => 'Bieżące rozwiązane zgłoszenie']);
+        $other = Ticket::factory()->archived()->create(['title' => 'Archiwalne z innej kategorii']);
+        $params = ['view' => 'archived', 'status' => 'resolved', 'category_id' => $category->id];
+
+        $url = $this->assertPaginationRedirect(
+            $this->get(route('tickets.index', $params + ['page' => 999])),
+            $params + ['page' => 2],
+        );
+
+        $this->get($url)
+            ->assertOk()
+            ->assertViewHas('view', 'archived')
+            ->assertDontSee('Archiwum jest puste')
+            ->assertDontSee($active->title)
+            ->assertDontSee($other->title)
+            ->assertViewHas('tickets', fn ($tickets) => $tickets->total() === 12
+                && $tickets->count() === 2
+                && $tickets->modelKeys() === $matches->take(2)->reverse()->values()->modelKeys());
+    }
+
+    public static function emptyPages(): array
+    {
+        return [
+            'empty active list' => ['active', false, 'Brak zgłoszeń'],
+            'empty archive' => ['archived', false, 'Archiwum jest puste'],
+            'no active matches' => ['active', true, 'Brak wyników filtrowania'],
+            'no archived matches' => ['archived', true, 'Brak wyników filtrowania'],
+        ];
+    }
+
+    #[DataProvider('emptyPages')]
+    public function test_page_beyond_empty_results_redirects_once_to_first_page(string $view, bool $filtered, string $message): void
+    {
+        $params = ['view' => $view];
+
+        if ($filtered) {
+            $category = Category::factory()->create();
+            Ticket::factory()->create(['category_id' => $category->id]);
+            Ticket::factory()->resolved()->create();
+            Ticket::factory()->archived()->create();
+            $params['status'] = 'resolved';
+            $params['category_id'] = $category->id;
+        }
+
+        $url = $this->assertPaginationRedirect(
+            $this->get(route('tickets.index', $params + ['page' => 999])),
+            $params + ['page' => 1],
+        );
+
+        $response = $this->get($url)
+            ->assertOk()
+            ->assertViewHas('view', $view)
+            ->assertSee($message)
+            ->assertViewHas('tickets', fn ($tickets) => $tickets->total() === 0
+                && $tickets->count() === 0
+                && $tickets->currentPage() === 1);
+
+        foreach (['Brak zgłoszeń', 'Archiwum jest puste', 'Brak wyników filtrowania'] as $emptyMessage) {
+            if ($emptyMessage !== $message) {
+                $response->assertDontSee($emptyMessage);
+            }
+        }
+    }
+
     public static function invalidFilters(): array
     {
-        return [[['status' => 'wrong']], [['status' => ['new']]], [['category_id' => [1]]], [['category_id' => 99999]],
-            [['view' => 'wrong']], [['view' => ['active']]], [['page' => 0]], [['page' => -1]], [['page' => 'abc']],
-            [['page' => '1.5']], [['page' => [1]]], [['page' => '']], [['page' => '999999999999999999999999']]];
+        return [
+            [['status' => 'wrong']],
+            [['status' => ['new']]],
+            [['category_id' => [1]]],
+            [['category_id' => 99999]],
+            [['view' => 'wrong']],
+            [['view' => ['active']]],
+            [['page' => 0]],
+            [['page' => -1]],
+            [['page' => 'abc']],
+            [['page' => '1.5']],
+            [['page' => [1]]],
+            [['page' => '']],
+            [['page' => '999999999999999999999999']],
+        ];
     }
 
     #[DataProvider('invalidFilters')]
@@ -292,7 +478,10 @@ class TicketTest extends TestCase
     public function test_invalid_array_input_can_be_rendered_after_redirect(): void
     {
         $this->followingRedirects()->from(route('tickets.create'))->post(route('tickets.store'), [
-            'title' => ['bad'], 'location' => ['bad'], 'category_id' => ['bad'], 'description' => ['bad'],
+            'title' => ['bad'],
+            'location' => ['bad'],
+            'category_id' => ['bad'],
+            'description' => ['bad'],
         ])->assertOk()->assertSee('musi być tekstem');
         $this->assertDatabaseCount('tickets', 0);
         $ticket = Ticket::factory()->inProgress()->create();

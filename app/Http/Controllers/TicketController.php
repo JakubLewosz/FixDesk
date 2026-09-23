@@ -26,22 +26,46 @@ class TicketController extends Controller
             'category_id' => ['nullable', 'integer', 'exists:categories,id'],
             'page' => ['sometimes', 'required', 'integer', 'min:1', 'max:2147483647'],
         ]);
+
         if ($validator->fails()) {
             return redirect()->route('tickets.index')->with('error', 'Wyczyszczono błędne filtry. Wyświetlono listę bieżącą.');
         }
+
         $filters = $validator->validated();
         $view = $filters['view'] ?? 'active';
         $query = Ticket::with('category');
-        $view === 'archived' ? $query->whereNotNull('archived_at') : $query->whereNull('archived_at');
+
+        if ($view === 'archived') {
+            $query->whereNotNull('archived_at');
+        } else {
+            $query->whereNull('archived_at');
+        }
+
         if ($filters['status'] ?? null) {
             $query->where('status', $filters['status']);
         }
+
         if ($filters['category_id'] ?? null) {
             $query->where('category_id', $filters['category_id']);
         }
-        $tickets = $query->orderByDesc('created_at')->orderByDesc('id')->paginate(10)->appends($filters);
 
-        return view('tickets.index', compact('tickets', 'view', 'filters') + ['categories' => Category::orderBy('name')->get()]);
+        $tickets = $query->orderByDesc('created_at')
+            ->orderByDesc('id')
+            ->paginate(10)
+            ->appends($filters);
+
+        if ($tickets->currentPage() > $tickets->lastPage()) {
+            return redirect()->route('tickets.index', array_replace($filters, [
+                'page' => $tickets->lastPage(),
+            ]));
+        }
+
+        return view('tickets.index', [
+            'tickets' => $tickets,
+            'view' => $view,
+            'filters' => $filters,
+            'categories' => Category::orderBy('name')->get(),
+        ]);
     }
 
     public function create(): View

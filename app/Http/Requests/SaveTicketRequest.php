@@ -18,9 +18,11 @@ class SaveTicketRequest extends FormRequest
 
     public function rules(): array
     {
-        return ['title' => ['required', 'string', 'min:5', 'max:120'],
+        return [
+            'title' => ['required', 'string', 'min:5', 'max:120'],
             'location' => ['required', 'string', 'min:2', 'max:100'],
             'category_id' => ['required', 'integer', 'exists:categories,id'],
-            'description' => ['required', 'string', 'min:10', 'max:5000'], ];
+            'description' => ['required', 'string', 'min:10', 'max:5000'],
+        ];
     }
 }

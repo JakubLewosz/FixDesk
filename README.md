@@ -123,6 +123,8 @@ Czas zapisujemy w **UTC**, a wyświetlamy w **Europe/Warsaw**, z uwzględnieniem
 
 Parametry listy to `view`, `status`, `category_id`, `page`. Puste filtry nie ograniczają wyników; niepoprawne parametry czyszczą wszystkie filtry i wracają do bieżącej listy. Zmiana widoku zeruje filtry, formularz filtrów pomija stronę, a paginacja zachowuje zastosowane filtry. Sortowanie: najnowsze `created_at`, następnie najwyższe `id`.
 
+Poprawny numer strony przekraczający zakres wyników przekierowuje na ostatnią dostępną stronę, z zachowaniem zwalidowanego widoku i filtrów. Przy braku wyników i `page > 1` następuje jedno przekierowanie na stronę 1, która zwraca HTTP 200 i pokazuje pustą listę bieżącą, puste archiwum lub brak wyników filtrowania. Przykład: 14 bieżących zgłoszeń i `/tickets?page=999` → strona 2 z 4 zgłoszeniami.
+
 ## Scenariusz ręczny
 
 1. Dodaj zgłoszenie, używając polskich znaków i wielowierszowego opisu.
@@ -132,17 +134,17 @@ Parametry listy to `view`, `status`, `category_id`, `page`. Puste filtry nie ogr
 5. Wpisz opis naprawy (10–2000 znaków) i zapisz. Sprawdź opis i datę rozwiązania.
 6. Spróbuj wejść na `/tickets/NUMER/edit` — powinno przekierować z wyjaśnieniem.
 7. Archiwizuj; znajdź zgłoszenie w Archiwum i odczytaj szczegóły.
-8. Sprawdź dwa filtry razem, drugą stronę listy i nieistniejący numer zgłoszenia.
+8. Sprawdź dwa filtry razem, drugą stronę listy oraz `page=999` z wynikami i bez dopasowań. Sprawdź również archiwum i nieistniejący numer zgłoszenia.
 
 ## Bezpieczeństwo i granice
 
 Formularze mają `@csrf`, edycja także `@method('PATCH')`; brak mutacji przez GET. Blade escapuje dane, zachowując nowe linie przez CSS. HTML jest zwykłym tekstem. Eloquent wiąże parametry, a zapis formularza używa tylko `validated()` i czterech dozwolonych pól. Dosłane statusy i daty są ignorowane. Klucz obcy blokuje usunięcie używanej kategorii i przypisanie nieistniejącej. `.gitignore` wyłącza środowisko, logi, zależności i zrzuty SQL.
 
-Laravel 13 używa middleware `PreventRequestForgery`: akceptuje wiarygodne `Sec-Fetch-Site: same-origin` albo pasujący token sesji. Zwykłe testy Feature pomijają tę kontrolę; dlatego wykonano oddzielny sprawdzian przez rzeczywiste HTTP. Błąd bez tokena/z błędnym tokenem i bez prawidłowego pochodzenia daje 419. Nie wyłączono middleware ani nie dodano wyjątków CSRF.
+Laravel 13 używa middleware `PreventRequestForgery`: akceptuje wiarygodne `Sec-Fetch-Site: same-origin` albo pasujący token sesji. Zwykłe testy Feature pomijają tę kontrolę; podczas pierwotnej weryfikacji wykonano oddzielny sprawdzian przez rzeczywiste HTTP, opisany w [raporcie](docs/verification.md). Błąd bez tokena/z błędnym tokenem i bez prawidłowego pochodzenia daje 419. Nie wyłączono middleware ani nie dodano wyjątków CSRF.
 
 Projekt nie przeszedł zewnętrznego audytu i nie jest wdrożeniem produkcyjnym.
 
-## Zrzuty i nauka
+## Zrzuty ekranu
 
 Autentyczne zrzuty lokalnie działającej aplikacji:
 
@@ -153,6 +155,4 @@ Autentyczne zrzuty lokalnie działającej aplikacji:
 
 ## Wykorzystanie AI
 
-Codex wygenerował implementację, testy i dokumentację oraz uruchomił sprawdzenia opisane w raporcie weryfikacji. Jakub powinien sam przejrzeć kod, wykonać scenariusz i ćwiczenie oraz przygotować własne wyjaśnienie przed wysłaniem projektu. Techniczna weryfikacja przez narzędzia nie oznacza, że autor osobiście przejrzał kod lub opanował jego działanie.
-
-Dwa niewdrożone pomysły na później: wyszukiwanie po tytule oraz proste CI.
+Codex został wykorzystany do wygenerowania implementacji, testów i dokumentacji oraz wprowadzenia poprawek. Zakres wykonanych sprawdzeń i ich ograniczenia opisano w [docs/verification.md](docs/verification.md). Weryfikacja narzędziowa nie stanowi potwierdzenia osobistego przeglądu kodu przez autora.

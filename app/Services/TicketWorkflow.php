@@ -31,12 +31,23 @@ class TicketWorkflow
     public function ensureAllowed(Ticket $ticket, string $action): void
     {
         $ticket->refresh();
+
         $allowed = match ($action) {
-            'edit' => $this->canEdit($ticket), 'start' => $this->canStart($ticket),
-            'resolve' => $this->canResolve($ticket), 'archive' => $this->canArchive($ticket),
+            'edit' => $this->canEdit($ticket),
+            'start' => $this->canStart($ticket),
+            'resolve' => $this->canResolve($ticket),
+            'archive' => $this->canArchive($ticket),
         };
+
         if (! $allowed) {
-            throw new DomainException('Ta operacja nie jest dostępna w aktualnym stanie zgłoszenia.');
+            $message = match ($action) {
+                'edit' => 'Edytować można tylko nowe zgłoszenia i zgłoszenia w trakcie, które nie są zarchiwizowane.',
+                'start' => 'Obsługę można rozpocząć tylko dla nowego, niezarchiwizowanego zgłoszenia.',
+                'resolve' => 'Rozwiązać można tylko niezarchiwizowane zgłoszenie będące w trakcie obsługi.',
+                'archive' => 'Archiwizować można tylko rozwiązane zgłoszenie, które nie znajduje się jeszcze w archiwum.',
+            };
+
+            throw new DomainException($message);
         }
     }
 

@@ -18,6 +18,12 @@ Po wysłaniu `POST /tickets` middleware uruchamia sesję i ochronę CSRF. `TrimS
 
 `NULL` oznacza brak rozwiązania/daty, a nie pusty opis albo datę zero. Baza przechowuje UTC, widoki przeliczają do Europe/Warsaw. Reguły procesu realizuje serwis, nie observer ani ukryty formularz.
 
+Cztery komunikaty odmowy powstają w `TicketWorkflow::ensureAllowed()`, w `match` zależnym od operacji: `edit`, `start`, `resolve`, `archive`. Serwis rzuca `DomainException`, a `bootstrap/app.php` przekierowuje na szczegóły i przekazuje komunikat przez sesję. Kontrola w Form Request poprzedza walidację; powtórna kontrola w operacji serwisu odświeża stan przed zapisem.
+
+## Pusta strona a brak wyników
+
+`$tickets->count()` i `isEmpty()` opisują tylko bieżącą stronę, natomiast `total()` obejmuje cały wynik zapytania z filtrami. Przy 14 rekordach strona 999 jest pusta, chociaż zbiór wyników nie jest pusty. `TicketController::index()` porównuje `currentPage()` z `lastPage()` istniejącego paginatora i przekierowuje na ostatnią stronę. Dla zera wyników `lastPage()` wynosi 1, więc przekierowanie nie zapętla się. `array_replace()` zastępuje stare `page`, zachowując wyłącznie zwalidowane parametry. Widok `tickets/index.blade.php` wybiera pusty stan, gdy `total()` wynosi 0.
+
 ## Dziesięć pytań rekrutacyjnych
 
 1. **Migracja, seeder i factory — czym się różnią?** Migracja tworzy strukturę, seeder wczytuje jawnie demonstracyjne dane, factory tworzy warianty danych testowych. Zobacz `database/`.
@@ -41,3 +47,11 @@ Zwiększ limit tytułu ze 120 do 160 znaków:
 4. Uruchom migrację na lokalnej bazie oraz testy na `fixdesk_test`. Sprawdź widok długiego tytułu na telefonie.
 
 Ćwiczenie jest tylko opisane — w aktualnym MVP limit pozostaje 120.
+
+## Własny przegląd Jakuba — do wykonania
+
+Poniższe punkty pozostają niewykonane, dopóki Jakub sam ich nie potwierdzi:
+
+- [ ] Przejrzeć kontroler, Form Request, serwis procesu i testy; wyjaśnić korektę strony oraz kolejność kontroli przed zapisem.
+- [ ] Samodzielnie uruchomić testy na `fixdesk_test` i scenariusz ręczny z README.
+- [ ] Wykonać opisane ćwiczenie w osobnej zmianie i przygotować własne wyjaśnienie implementacji oraz zakresu użycia AI.

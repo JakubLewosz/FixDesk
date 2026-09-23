@@ -18,6 +18,8 @@ class ResolveTicketRequest extends FormRequest
 
     public function rules(): array
     {
-        return ['resolution' => ['required', 'string', 'min:10', 'max:2000']];
+        return [
+            'resolution' => ['required', 'string', 'min:10', 'max:2000'],
+        ];
     }
 }
