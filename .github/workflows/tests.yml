@@ -1,0 +1,110 @@
+name: Tests
+
+on:
+  push:
+  pull_request:
+    branches: [main]
+  workflow_dispatch:
+
+jobs:
+  tests:
+    runs-on: ubuntu-24.04
+    timeout-minutes: 15
+    permissions:
+      contents: read
+
+    services:
+      mysql:
+        image: mysql:8.4
+        env:
+          MYSQL_DATABASE: fixdesk_test
+          MYSQL_USER: fixdesk
+          MYSQL_PASSWORD: fixdesk_ci_only
+          MYSQL_ROOT_PASSWORD: root_ci_only
+        ports:
+          - 3306:3306
+        options: >-
+          --health-cmd="mysqladmin ping --host=127.0.0.1 --silent"
+          --health-interval=5s
+          --health-timeout=5s
+          --health-retries=12
+
+    env:
+      APP_ENV: testing
+      APP_DEBUG: 'false'
+      DB_CONNECTION: mysql
+      DB_HOST: 127.0.0.1
+      DB_PORT: 3306
+      DB_DATABASE: fixdesk_test
+      DB_USERNAME: fixdesk
+      DB_PASSWORD: fixdesk_ci_only
+      DB_URL: ''
+      SESSION_DRIVER: file
+      CACHE_STORE: file
+      QUEUE_CONNECTION: sync
+
+    steps:
+      - name: Checkout
+        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          persist-credentials: false
+
+      - name: Set up PHP
+        uses: shivammathur/setup-php@f3e473d116dcccaddc5834248c87452386958240 # 2.37.2
+        with:
+          php-version: '8.4'
+          extensions: ctype, curl, dom, fileinfo, filter, hash, iconv, mbstring, openssl, pcre, PDO, pdo_mysql, session, tokenizer, xml, xmlwriter, zip
+          tools: composer:v2
+          coverage: none
+
+      - name: Validate and install locked dependencies
+        run: |
+          composer validate --strict
+          composer install --no-interaction --prefer-dist
+          composer check-platform-reqs
+          git diff --exit-code -- composer.lock
+
+      - name: Prepare test configuration
+        run: |
+          cp .env.testing.example .env.testing
+          php artisan key:generate --env=testing
+          php artisan config:clear
+
+      - name: Wait for MySQL and verify the active test database
+        run: |
+          php <<'PHP'
+          <?php
+          require 'vendor/autoload.php';
+          $app = require 'bootstrap/app.php';
+          $app->make(Illuminate\Contracts\Console\Kernel::class)->bootstrap();
+          $connection = Illuminate\Support\Facades\DB::connection();
+          $ready = false;
+          for ($attempt = 0; $attempt < 30; $attempt++) {
+              try {
+                  $actual = $connection->selectOne('SELECT DATABASE() AS name, VERSION() AS version');
+                  $ready = true;
+                  break;
+              } catch (PDOException $exception) {
+                  $connection->disconnect();
+                  sleep(2);
+              }
+          }
+          if (! $ready) {
+              throw new RuntimeException('MySQL did not become ready within 60 seconds.');
+          }
+          if ($app->configurationIsCached() || ! $app->environment('testing')
+              || $connection->getDriverName() !== 'mysql'
+              || $connection->getConfig('host') !== '127.0.0.1'
+              || (int) $connection->getConfig('port') !== 3306
+              || $connection->getDatabaseName() !== 'fixdesk_test'
+              || $actual->name !== 'fixdesk_test') {
+              throw new RuntimeException('Unexpected test database configuration.');
+          }
+          printf("MySQL %s; mysql at 127.0.0.1:3306; active database: %s\n", $actual->version, $actual->name);
+          PHP
+
+      - name: Run tests
+        run: php artisan test --fail-on-empty-test-suite
+
+      - name: Check code style
+        run: vendor/bin/pint --test

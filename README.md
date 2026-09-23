@@ -122,6 +122,8 @@ composer check-platform-reqs
 vendor/bin/pint --test
 ```
 
+GitHub Actions uruchamia ten sam zestaw testów oraz walidację Composera i Pint po każdym pushu i dla pull requestów do `main`. Workflow [Tests](https://github.com/JakubLewosz/FixDesk/actions/workflows/tests.yml) używa PHP 8.4 i osobnej bazy `fixdesk_test` w jednorazowym MySQL 8.4; nie wymaga sekretów ani Dockera przy lokalnym uruchamianiu. Można go także uruchomić ręcznie.
+
 ## Przykładowe użycie
 
 1. Na liście wybierz **+ Nowe zgłoszenie**, wypełnij tytuł, kategorię, lokalizację i opis usterki, a następnie zapisz.
